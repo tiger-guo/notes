@@ -42,6 +42,11 @@ innodb_flush_log_at_trx_commit 控制 redo log buffer 写入 redo log file 的�
 
 ![](./images/mysql/redo_log_sync.png)
 
+实际上，除了后台线程每秒一次的轮询操作外，还有两种场景会让一个没有提交的事务的 redo log 写入到磁盘中。
+
+1. 一种是，redo log buffer 占用的空间即将达到 innodb_log_buffer_size 一半的时候，后台线程会主动写盘。注意，由于这个事务并没有提交，所以这个写盘动作只是 write，而没有调用 fsync，也就是只留在了文件系统的 os buffer。
+2. 另一种是，并行的事务提交的时候，顺带将这个事务的 redo log buffer 持久化到磁盘。假设一个事务 A 执行到一半，已经写了一些 redo log 到 buffer 中，这时候有另外一个线程的事务 B 提交，如果 innodb_flush_log_at_trx_commit 设置的是 1，那么按照这个参数的逻辑，事务 B 要把 redo log buffer 里的日志全部持久化到磁盘。这时候，就会带上事务 A 在 redo log buffer 里的日志一起持久化到磁盘。
+
 ### 物理文件
 默认情况下，对应的物理文件位于数据库的 data 目录下的ib_logfile1、ib_logfile2。
 
@@ -60,7 +65,18 @@ bin log是Mysql Server层的逻辑日志，bin log中存储的内容称之为事
 因此可以基于 binlog 做到类似于 oracle 的闪回功能，其实都是依赖于 binlog 中的日志记录。
 
 ### 工作原理
-事务提交的时候，会一次性将事务中的 SQL 语句（一个事务可能对应多个 SQL 语句）按照一定的格式记录到 binlog 中。但是对 binlog 来说，较大事务的提交可能会变得比较慢一些，这是因为 binlog 是在事务提交的时候一次性写入的。
+系统会给binlog cache分配了一片内存，每个线程一个，参数binlog_cache_size用于控制单个线程内binlog cache所占内存的大小。如果超过了这个参数规定的大小，就要暂存到磁盘。事务提交的时候，执行器把binlog cache里的完整事务写入到binlog 中，并清空 binlog cache。
+![](./images/mysql/bin_log_sync.png)
+- 图中的 write，指的就是指把日志写入到文件系统的 page cache，并没有把数据持久化到磁盘，所以速度比较快。
+- 图中的 fsync，才是将数据持久化到磁盘的操作。一般情况下，我们认为 fsync 才占磁盘的 IOPS。
+
+**write 和 fsync 的时机，是由参数 sync_binlog 控制的：**
+1. sync_binlog=0 的时候，表示每次提交事务都只 write，不 fsync；
+2. sync_binlog=1 的时候，表示每次提交事务都会执行 fsync；
+3. sync_binlog=N(N>1) 的时候，表示每次提交事务都 write，但累积 N 个事务后才 fsync。
+
+因此，在出现 IO 瓶颈的场景里，将 sync_binlog 设置成一个比较大的值，可以提升性能。在实际的业务场景中，考虑到丢失日志量的可控性，一般不建议将这个参数设成 0，比较常见的是将其设置为 100~1000 中的某个数值。但是，将 sync_binlog 设置为 N，对应的风险是：如果主机发生异常重启，会丢失最近 N 个事务的 binlog 日志。
+
 
 ### 物理文件
 binlog 文件存放路径由参数 log_bin_basename 控制，binlog 日志文件按照指定大小，当日志文件达到指定的最大的大小之后，进行滚动更新生成新的日志文件（如：binlog.0001,binlog.0002）。
@@ -83,7 +99,7 @@ binlog 文件存放路径由参数 log_bin_basename 控制，binlog 日志文件
 
 
 **日志覆盖方式**
-- bin log 单文件是有最大限制的，达到最大上限后会滚的更新，但整体大小无限制。
+- bin log 单文件是有最大限制的，达到最大上限后会滚动的更新，但整体大小无限制。
 - redo log 空间是固定的，只能循环写。
 
 ## 参考
