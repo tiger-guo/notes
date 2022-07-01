@@ -2,9 +2,9 @@
 title: helm教程(一) - 介绍
 date: 2022-05-24
 tags:
-    - helm
+    - Kubernetes
 categories:
-    - helm
+    - Kubernetes
 ---
 
 

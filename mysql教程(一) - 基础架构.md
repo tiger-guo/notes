@@ -2,9 +2,9 @@
 title: mysql教程(一) - 基础架构
 date: 2022-02-23
 tags:
-    - mysql
+    - Mysql
 categories:
-    - mysql
+    - Mysql
 ---
 
 

@@ -2,9 +2,9 @@
 title: grpc教程(二) - grpcurl 使用教程
 date: 2022-04-18
 tags:
-    - grpc
+    - Grpc
 categories:
-    - grpc
+    - Grpc
 ---
 
 # grpcurl 使用教程

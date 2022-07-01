@@ -2,9 +2,9 @@
 title: mysql教程(二) - 日志文件
 date: 2022-02-23
 tags:
-    - mysql
+    - Mysql
 categories:
-    - mysql
+    - Mysql
 ---
 
 ## Mysql日志文件
